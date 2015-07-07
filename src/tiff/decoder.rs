@@ -104,6 +104,7 @@ fn rev_hpredict_nsamp<T>(mut image: Vec<T>,
 }
 
 fn rev_hpredict(image: DecodingResult, size: (u32, u32), color_type: ColorType) -> ImageResult<DecodingResult> {
+    // println!("Entered rev_hpreditct at line {:?} in file: {:?}", line!(), file!() );
     let samples = match color_type {
         ColorType::Gray(8) | ColorType::Gray(16) => 1,
         ColorType::RGB(8) | ColorType::RGB(16) => 3,
@@ -153,6 +154,7 @@ impl<R: Read + Seek> TIFFDecoder<R> {
                 "TIFF signature not found.".to_string()
             ))
         }
+        // println!("This image is{:?} ", self.byte_order );
         if try!(self.read_short()) != 42 {
             return Err(image::ImageError::FormatError("TIFF signature invalid.".to_string()))
         }
@@ -223,6 +225,7 @@ impl<R: Read + Seek> TIFFDecoder<R> {
                 format!("{} samples per pixel is supported.", self.samples)
             ))
         }
+
         Ok(self)
     }
 
@@ -304,8 +307,8 @@ impl<R: Read + Seek> TIFFDecoder<R> {
         }
         for _ in (0..try!(self.read_short())) {
             let (tag, entry) = match try!(self.read_entry()) {
-                Some(val) => val,
-                None => continue // Unknown data type in tag, skip
+                Some(val) => { println!("{:?}", val );  val },
+                None => { println!("Unknown data type in tag " ); continue }// Unknown data type in tag, skip
             };
             dir.insert(tag, entry);
         }
@@ -328,7 +331,9 @@ impl<R: Read + Seek> TIFFDecoder<R> {
         };
         match ifd.get(&tag) {
             None => Ok(None),
-            Some(entry) => Ok(Some(try!(entry.val(self))))
+            Some(entry) => Ok(Some(try!(entry.val(self)))) 
+            // moving the functionality of the entry.val function here
+            // is one way to make ifd not depend on decoder
         }
     }
 
@@ -372,7 +377,9 @@ impl<R: Read + Seek> TIFFDecoder<R> {
     /// Decompresses the strip into the supplied buffer.
     /// Returns the number of bytes read.
     fn expand_strip<'a>(&mut self, buffer: DecodingBuffer<'a>, offset: u32, length: u32) -> ImageResult<usize> {
+        // println!("Entered expand_strip at line {:?} in file: {:?}", line!(), file!() );
         let color_type = try!(self.colortype());
+        // println!("Entered decoder_to_image at line {:?} in file: {:?} colortype = {:?}", line!(), file!(), color_type );
         try!(self.goto_offset(offset));
         let (bytes, mut reader): (usize, Box<EndianReader>) = match self.compression_method {
             CompressionMethod::None => {
@@ -455,22 +462,27 @@ impl<R: Read + Seek> ImageDecoder for TIFFDecoder<R> {
     }
 
     fn read_image(&mut self) -> ImageResult<DecodingResult> {
+        // println!("Entered read_image at line {:?} in src/tiff/decoder.rs", line!() );
+        let number_of_channels = self.bits_per_sample.iter().count();
         let buffer_size =
-            self.width  as usize
+              self.width  as usize
             * self.height as usize
-            * self.bits_per_sample.iter().count();
-        let mut result = match (self.bits_per_sample.iter()
+            * number_of_channels;
+        let mut result = match (self.bits_per_sample.iter() // each u8 is bits per channel
                                                .map(|&x| x)
-                                               .max()
-                                               .unwrap_or(8) as f32/8.0).ceil() as u8 {
-            n if n <= 8 => DecodingResult::U8(Vec::with_capacity(buffer_size)),
-            n if n <= 16 => DecodingResult::U16(Vec::with_capacity(buffer_size)),
+                                               .max()       // now reduced to just one u8   
+                                               .unwrap_or(16) as f32/8.0).ceil() as u8 { // now we have bytes per channel
+            n if n ==  1 => { println!(" number_of_channels = {:?}, bytes per channel = {:?}", number_of_channels, n ); DecodingResult::U8( Vec::with_capacity(buffer_size)) }, 
+            n if n ==  2 => { println!(" number_of_channels = {:?}, bytes per channel = {:?}", number_of_channels, n ); DecodingResult::U16(Vec::with_capacity(buffer_size)) }, 
             n => return Err(
                 ImageError::UnsupportedError(
-                    format!("{} bits per channel not supported", n)
+                    format!("{} bytes per channel not supported", n)
                 )
             )
         };
+
+        // println!("Entered read_image at line {:?} in src/tiff/decoder.rs", line!() );
+
         if let Ok(config) = self.get_tag_u32(ifd::Tag::PlanarConfiguration) {
             match FromPrimitive::from_u32(config) {
                 Some(PlanarConfiguration::Chunky) => {},
@@ -479,24 +491,36 @@ impl<R: Read + Seek> ImageDecoder for TIFFDecoder<R> {
                 ))
             }
         }
+        // println!("Entered read_image at line {:?} in src/tiff/decoder.rs", line!() );
         // Safe since the uninizialized values are never read.
         match result {
             DecodingResult::U8(ref mut buffer) =>
-                unsafe { buffer.set_len(buffer_size) },
+            {
+                // println!("Entered read_image at line {:?} in src/tiff/decoder.rs", line!() );
+                unsafe { buffer.set_len(buffer_size) }
+            },
             DecodingResult::U16(ref mut buffer) =>
-                unsafe { buffer.set_len(buffer_size) },
+            {
+                // println!("using 16 bit decoder Entered read_image at line {:?} in src/tiff/decoder.rs", line!() );
+                unsafe { buffer.set_len(buffer_size) }
+            },
         }
+
+        // println!("Entered read_image at line {:?} in src/tiff/decoder.rs", line!() );
         let mut units_read = 0;
         for (&offset, &byte_count) in try!(self.get_tag_u32_vec(ifd::Tag::StripOffsets))
         .iter().zip(try!(self.get_tag_u32_vec(ifd::Tag::StripByteCounts)).iter()) {
+            // println!("{:?}", "Entered read_image at 509 in src/tiff/decoder.rs" );
             units_read += match result {
                 DecodingResult::U8(ref mut buffer) => {
+                    // println!("Entered read_image at line {:?} in src/tiff/decoder.rs", line!() );
                     try!(self.expand_strip(
                         DecodingBuffer::U8(&mut buffer[units_read..]),
                         offset, byte_count
                     ))
                 },
                 DecodingResult::U16(ref mut buffer) => {
+                    // println!("{:?}", "Entered read_image at 519 in src/tiff/decoder.rs" );                    
                     try!(self.expand_strip(
                         DecodingBuffer::U16(&mut buffer[units_read..]),
                         offset, byte_count
@@ -507,6 +531,7 @@ impl<R: Read + Seek> ImageDecoder for TIFFDecoder<R> {
                 break
             }
         }
+        // println!("Entered read_image at line {:?} in src/tiff/decoder.rs", line!() );
         // Shrink length such that the uninitialized memory is not exposed.
         if units_read < buffer_size {
             match result {
@@ -516,6 +541,7 @@ impl<R: Read + Seek> ImageDecoder for TIFFDecoder<R> {
                     unsafe { buffer.set_len(units_read) },
             }
         }
+        // println!("Entered read_image at line {:?} in src/tiff/decoder.rs", line!() );
         if let Ok(predictor) = self.get_tag_u32(ifd::Tag::Predictor) {
             result = match FromPrimitive::from_u32(predictor) {
                 Some(Predictor::None) => result,
@@ -531,6 +557,7 @@ impl<R: Read + Seek> ImageDecoder for TIFFDecoder<R> {
                 ))
             }
         }
+        // println!("Exiting  read_image at line {:?} in src/tiff/decoder.rs", line!() );
         Ok(result)
     }
 }

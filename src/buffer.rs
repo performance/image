@@ -235,6 +235,7 @@ where P: Pixel + 'static,
                 _phantom: PhantomData,
             })
         } else {
+            println!("Entered from_raw at line {:?} in file {:?}", line!(), file!() );
             None
         }
     }
@@ -581,6 +582,9 @@ pub type RgbImage = ImageBuffer<Rgb<u8>, Vec<u8>>;
 pub type RgbaImage = ImageBuffer<Rgba<u8>, Vec<u8>>;
 /// Sendable grayscale image buffer
 pub type GrayImage = ImageBuffer<Luma<u8>, Vec<u8>>;
+
+/// Sendable grayscale image buffer
+pub type Gray16Image = ImageBuffer<Luma<u16>, Vec<u16>>;
 /// Sendable grayscale + alpha channel image buffer
 pub type GrayAlphaImage = ImageBuffer<LumaA<u8>, Vec<u8>>;
 

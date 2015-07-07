@@ -81,6 +81,7 @@ impl<T: Primitive + 'static> Pixel for $ident<T> {
         $interpretation
     }
     fn color_type() -> ColorType {
+        // println!("Entered color_type at line {:?} in file: {:?}", line!(), file!() );
         ColorType::$color_type(mem::size_of::<T>() as u8 * 8)
     }
     #[inline(always)]
@@ -224,6 +225,8 @@ impl<T: Primitive> IndexMut<usize> for $ident<T> {
 
     }
 }
+
+// $ident, $channels, $alphas, $interpretation, $color_type, #[$doc:meta];
 
 define_colors! {
     Rgb, 3, 0, "RGB", RGB, #[doc = "RGB colors"];
